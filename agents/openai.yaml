@@ -1,0 +1,4 @@
+interface:
+  display_name: "XHS Scraper"
+  short_description: "按关键词抓取小红书帖子、完整评论并断点同步到业务 API"
+  default_prompt: "Use $xhs-scraper to collect the first N Xiaohongshu posts for my keywords with complete comments and resumable API sync."
