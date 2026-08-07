@@ -1,157 +1,124 @@
-## 目标
-使用真实账号和 Cookie 调用小红书 Web API，支持按多个关键词搜索，按照设置的筛选条件（默认按综合自然排序），抓取前n个帖子的字段信息，按照要求的输出格式通过API上传至数据库。
-抓取的字段：正文、作者、图片、时间、点赞、评论总数、全量顶层评论、全量子评论
+# xhs-scraper
 
-## 解决的问题
-xiaohongshu-CLI只能读取帖子每条顶层评论下的第一条子评论，无法完整读取“展开”后的全部子评论
-get_sub_comments() 没有复用 get_comments() 的 xsec token 解析和失效重试逻辑
-不具备采集限频和风控策略
-设置了单帖180秒硬超时，可能导致较大的抓取任务被强行截断
-设置了超过300条评论的帖子就跳过不抓取的逻辑
-CLI锁定了依赖库xhshow（https://pypi.org/project/xhshow/）版本，导致旧版签名器不兼容当前子评论接口，CLI对相同参数返回code=-1，子评论提取不全
+一个面向 Agent 的小红书关键词采集 Skill。它编排兼容的 `xiaohongshu-cli`，按指定筛选条件
+取得每个关键词前 N 个帖子，抓取帖子信息、顶层评论和子评论，并在数据完整后同步到业务 API。
 
-## 使用方法
-1、下载xhs-scraper.skill、xiaohongshu-CLI
-2、告诉Agent关键词+筛选条件+帖子抓取数量
-  支持设置的筛选条件：
-    排序：general、latest、most-liked、most-commented、most-collected
-    发布时间：all、day、week、half-year
-    搜索范围：all、seen、unseen、followed
-    “最多评价”映射为小红书接口的 comment_descending
+> 本仓库只包含 Skill，不包含抓取器。实际执行依赖带有 `scrape_and_sync.py` 的
+> `xiaohongshu-cli` 项目。
 
-#### 输入的提示词示例：
-/xhs-scraper.skill
-  关键词：
-  - 美国货代
-  - 美加线
-  - 美国海运
-  每个关键词：5 个帖子
+## 能做什么
 
-Agent实际运行命令：
-  cd /Users/3rw_colxxxsar/Documents/xiaohongshu-cli-main
-  
-  uv run python scrape_and_sync.py \
-    --keyword "美国货代" \
-    --keyword "美加线" \
-    --keyword "美国海运" \
-    --limit 5
-    
-抓取流程固定为：
-  自然排序搜索
-  → 每词前 n 个唯一帖子
-  → 读取正文、作者、图片、时间、点赞、评论总数
-  → 顶层评论逐页
-  → 子评论逐页
-  → 完整 payload 落盘
-  → 上传 API
+- 多关键词搜索，并保持小红书 API 返回顺序
+- 每个关键词取得前 N 个唯一帖子；跨关键词相同帖子只抓取、上传一次
+- 采集 `note_id`、标题、作者、正文、图片、发布时间、点赞数、评论总数
+- 分页采集全部可访问的顶层评论与子评论
+- 按 comment ID 去重，检测重复 cursor
+- 中断后从 manifest 和评论 cursor 继续
+- 评论完整后才上传，避免部分数据覆盖完整数据
+- 对验证码、429、登录失效和 IP 拦截采取停止策略
 
-## 新增的功能
-### 子评论增加：
---xsec-token 解析和失效重试逻辑
-URL / 短索引解析
---all 全量提取
-token 自动刷新
+“全部评论”指持续分页直到平台响应表示完成。帖子删除、权限限制或真实风控信号仍可能导致
+`unavailable` 或 `partial`，Skill 不会把这些状态伪装成完成。
 
+## 工作方式
 
-#### 解决同步脚本因 180 秒总超时导致评论不全的问题
-主要修改在 [sync_xhs.py](/Users/3rw_colxxxsar/Documents/xiaohongshu-cli-main/sync_xhs.py)：
-保留每次 HTTP 请求自身的超时、重试和风控策略。
-每抓完一页顶层评论或子评论，立即原子写入 checkpoint。
+```text
+关键词 + 每词数量 + 筛选条件
+  → 签名 Web API 搜索
+  → 帖子详情
+  → 顶层评论分页
+  → 子评论分页
+  → 完整性检查
+  → 业务 API
+```
 
-#### 支持对较大的任务自动分轮执行、断点恢复、去重
-断点恢复分为任务级和评论级两层。如果中途超时，直接再次运行同一命令即可续抓。
+正常抓取不操作网页 DOM，也不使用 Playwright、Selenium 或其他自动化浏览器。
+Kimi WebBridge 仅用于首次导入真实 Chrome 中的 Cookie、会话失效后的重新登录，以及用户人工
+处理登录/验证码；它不是降风控手段，有有效 saved 会话时不需要在每轮运行前调用。
 
-##### 任务级 checkpoint
-保存在：.xhs-scrape-runs/<关键词-数量-hash>/manifest.json
-相同关键词和数量会生成相同运行目录。再次执行相同命令时，会读取已有 manifest，按note_id去重后继续抓取。
-每个帖子有以下状态：
-partial：评论未抓完，下次继续。
-ready：dry-run 已抓完整，payload 已生成。
-uploaded：已经上传，后续不会重复上传。
-failed：非风控类错误，需要检查错误信息。
+## 安装
 
-##### 评论级 checkpoint 
-位于：.xhs-scrape-runs/<任务>/comments/<note_id>.json
-它保存：
-{
-  "top_cursor": "下一页顶层评论游标",
-  "top_complete": false,
-  "seen_top_cursors": [],
-  "comments": [],
-  "reply_state": {
-    "父评论ID": {
-      "cursor": "下一页子评论游标",
-      "complete": false,
-      "seen_cursors": []
-    }
-  }
-}
-每成功抓完一页，就先写入临时文件，再用原子替换更新 checkpoint。因此即使下一页超时，上一页数据也不会丢。
-网络超时或风控暂停后，下次运行从保存的 cursor 继续。
-comment ID 去重并检测重复 cursor，防止分页死循环。
-评论未完整时标记为 partial，不会上传部分评论覆盖远端完整数据。
+```bash
+git clone https://github.com/3Rwcolxxxsar/xhs-scraper.git \
+  ~/.hermes/skills/xhs-scraper
+```
 
+准备兼容的 `xiaohongshu-cli` 后设置：
 
-#### 遇到卡点具备回退策略，不直接打断抓取过程
-只有登录、验证码或 API 契约变化才打断进程，请求用户的帮助。
+```bash
+export XHS_CLI_DIR="/path/to/xiaohongshu-cli"
+export XHS_SYNC_API_URL="https://your-api.example/xhs/sync"
+```
 
-#### 支持多Google Profile、多小红书账号并行
-每个 --account 独立保存 Cookie、token/index cache、风险状态和运行锁。
-同一账号仍强制单进程；不同账号可以各运行一个进程。
-每个账号拥有独立断点目录：
-.xhs-scrape-runs/accounts/<account>/<run-key>/
+`XHS_CLI_DIR` 中必须存在 `scrape_and_sync.py`、`pyproject.toml` 和 `xhs_cli/`。
+API 地址不保存在本仓库中。
 
-#### 限频、风控与账号安全
-<table>项目
-默认
-单账号并发
-1
-搜索页间隔
-3-10 秒随机
-帖子详情间隔
-8-24 秒随机
-一级/子评论分页：随机 5–12 秒
-单轮采集上限
-50-100 篇帖子
-连续运行时长
-60 分钟后休息
-异常处理
-发现验证码、登录失效、页面异常时立即暂停，而不是继续重试<table>
+## 告诉 Agent 怎么抓
 
-运行保护：
-- 单实例锁，避免多个任务同时操作同一个浏览器。
-- 每轮任务开始前先执行登录态检查。
-- 出现连续失败、验证码、登录失效、页面异常时立即暂停当前任务。
-- 对失败任务记录失败原因、失败阶段、帖子 ID 或账号 ID，方便重试。
-维护口径：
-- 频率参数不写死在脚本里，放在环境配置中。
-- 账号状态、最近运行时间、连续失败次数可查询。
+示例提示词：
 
-## 依赖
-1、xiaohongshu-CLI
-2、Kimi WebBridge
-  安装方法：https://www.kimi.com/zh-cn/features/webbridge
-3、Google Profile（Google个人资料，无需申请新的Google账号）
-目的：为了搭建多个独立的浏览器环境，用来隔离Cookie。
-以抓取小红书的信息为例，设置方式如下：
-  -点击 Chrome浏览器右上角头像。
-  -选择“添加 Chrome 个人资料”。
-  -选择“不登录账号继续”。
-  -若有多个小红书账号，分别命名为 小红书-A、小红书-B
-  -每个 Profile 分别扫码登录对应的小红书创作者账号。
-  -为每个 Profile 分别安装并启用 Kimi WebBridge 扩展，
-  -在小红书-A、小红书-B的Google浏览器中打开 Kimi WebBridge。
-连续点击左上角黑色 Kimi 图标 5 次后，点击“高级设置”，
-将“Daemon WebSocket 地址”分别改为：
-ws://127.0.0.1:10086/ws（默认，一般无需更改）、ws://127.0.0.1:10087/ws
-  - 让Agent为10086、10087配置多实例用户级常驻服务。
+```text
+使用 xhs-scraper：
+关键词：美国货代、加拿大货代
+每个关键词：5 个帖子
+排序：综合
+发布时间：不限
+搜索范围：不限
+完整抓取顶层评论和子评论，完成后同步到已配置 API。
+```
 
-## 边界
-抓取阶段：不使用任何浏览器，直接调用小红书签名 API。
-登录、Cookie 导入、验证码处理：只使用 Kimi WebBridge。
-Kimi WebBridge 控制的是你已经打开的真实、有界面的 Chrome。
-CLI 不启动 Playwright、Camoufox、Selenium，也不启动其他无头或有头浏览器。
+筛选值：
 
+| 维度 | 可用值 |
+| --- | --- |
+| 排序 | `general`、`latest`、`most-liked`、`most-commented`、`most-collected` |
+| 发布时间 | `all`、`day`、`week`、`half-year` |
+| 搜索范围 | `all`、`seen`、`unseen`、`followed` |
 
+Agent 最终会执行类似命令：
 
+```bash
+cd "$XHS_CLI_DIR"
+uv run python scrape_and_sync.py \
+  --cookie-source saved \
+  --keyword "美国货代" \
+  --keyword "加拿大货代" \
+  --limit 5 \
+  --sort general --time all --scope all \
+  --api-url "$XHS_SYNC_API_URL" \
+  --max-notes-per-run 2 \
+  --max-comment-pages-per-run 8
+```
 
+相同参数再次运行会恢复同一任务。`partial` 表示可恢复的未完成进度，不表示跳过；只有评论
+完整的帖子才会进入 `uploaded`。运行数据保存在 CLI 项目的 `.xhs-scrape-runs/`，文件权限为
+`0600`。
+
+`--dry-run` 仅表示不向业务 API 上传；搜索、详情和评论测试仍会向小红书发出真实请求并受相同
+风控规则约束。
+
+## 登录与账号
+
+先使用 `--cookie-source saved` 检查本地保存会话。只有会话缺失或失效时，才连接当前
+WebBridge Chrome Profile 导入 Cookie。当前 CLI 使用单个 WebBridge daemon；多 Profile
+需要逐个切换并导入到不同 `--account`，不能通过配置多个 WebSocket 端口实现并行浏览器控制。
+
+不同账号可各运行一个互不重叠的 API 任务，但不得在触发风控后自动换号继续。多个账号也可能
+共享公网 IP 和设备环境，账号隔离不等于风险隔离。
+
+## 风控与断点
+
+默认请求间隔来自 CLI：搜索 3–10 秒、帖子详情 8–24 秒、评论分页 5–12 秒。默认不按固定请求
+数强制休息；30 分钟只是在验证码、429、登录失效、IP 拦截或连续失败触发暂停时使用的默认
+冷却值。
+
+每轮默认最多尝试 2 个未完成帖子、最多请求 8 页评论。页预算不是评论截断；重新执行相同命令
+会从保存的 cursor 继续。不得因为帖子评论数超过 300 或其他阈值而跳过。
+
+## 完成标准
+
+Agent 应分别报告：筛选条件、每词目标数、选中数量、全局唯一帖子数、`uploaded`、`partial`、
+`failed`、`unavailable`、运行目录和风控状态。只有上传成功且评论 checkpoint 完整，才能称为
+完整同步。
+
+详细的 Agent 执行规则见 [SKILL.md](SKILL.md)。
