@@ -115,6 +115,49 @@ WebBridge Chrome Profile 导入 Cookie。当前 CLI 使用单个 WebBridge daemo
 每轮默认最多尝试 2 个未完成帖子、最多请求 8 页评论。页预算不是评论截断；重新执行相同命令
 会从保存的 cursor 继续。不得因为帖子评论数超过 300 或其他阈值而跳过。
 
+## 调整风控参数
+
+风控参数由运行环境读取；在启动命令前设置即可生效，不需要改脚本。默认值是保守起点，随机
+等待只能降低请求密度，不能保证不会触发平台限制。触发验证码、429、登录失效、IP 拦截或连续
+失败时，任务仍会停止。
+
+| 环境变量 | 默认值 | 含义 |
+| --- | --- | --- |
+| `XHS_RISK_ENABLED` | `1` | 是否启用限频、暂停和同账号单实例锁；仅本地自动化测试可设为 `0`。 |
+| `XHS_RISK_SEARCH_MIN_SECONDS` / `XHS_RISK_SEARCH_MAX_SECONDS` | `3` / `10` | 两次搜索请求间的随机等待范围（秒）。 |
+| `XHS_RISK_NOTE_MIN_SECONDS` / `XHS_RISK_NOTE_MAX_SECONDS` | `8` / `24` | 帖子详情及其他非搜索、非评论请求的随机等待范围（秒）。 |
+| `XHS_RISK_COMMENT_MIN_SECONDS` / `XHS_RISK_COMMENT_MAX_SECONDS` | `5` / `12` | 顶层评论与子评论分页请求的随机等待范围（秒）。 |
+| `XHS_RISK_MAX_REQUESTS_PER_RUN` | `0` | 单进程请求上限；`0` 表示不按固定请求数限制。设为正数时，到达上限仅结束本轮并保存断点，不会自动触发 30 分钟冷却。 |
+| `XHS_RISK_COOLDOWN_SECONDS` | `1800` | 真实风险信号或连续失败触发暂停后的冷却秒数。 |
+| `XHS_RISK_MAX_CONSECUTIVE_FAILURES` | `2` | 连续可恢复请求失败达到该次数后暂停。 |
+| `XHS_RISK_STATE_FILE` | 账号目录下的 `risk_state.json` | 可选：指定该账号的风险状态文件位置；多账号不要共用同一个文件。 |
+
+一次任务临时调整，例如将搜索间隔改为 4–8 秒、详情改为 10–20 秒：
+
+```bash
+cd "$XHS_CLI_DIR"
+XHS_RISK_SEARCH_MIN_SECONDS=4 \
+XHS_RISK_SEARCH_MAX_SECONDS=8 \
+XHS_RISK_NOTE_MIN_SECONDS=10 \
+XHS_RISK_NOTE_MAX_SECONDS=20 \
+CONDA_NO_PLUGINS=true uv run python scrape_and_sync.py \
+  --cookie-source saved \
+  --keyword "美国货代" --limit 5 \
+  --sort general --time all --scope all \
+  --api-url "$XHS_SYNC_API_URL"
+```
+
+需要长期使用时，将变量写入你自己维护的环境文件，例如 `.xhs-scraper.env`，每次启动前显式加载：
+
+```bash
+source .xhs-scraper.env
+CONDA_NO_PLUGINS=true uv run python scrape_and_sync.py --cookie-source saved ...
+```
+
+脚本不会自动读取 `.env` 文件；必须由 shell、任务调度器或部署环境注入这些变量。每轮工作量仍由
+`--max-notes-per-run`、`--max-comment-pages-per-run` 和 `--max-reply-pages-per-root` 控制，它们不是
+风控环境变量。
+
 ## 完成标准
 
 Agent 应分别报告：筛选条件、每词目标数、选中数量、全局唯一帖子数、`uploaded`、`partial`、
