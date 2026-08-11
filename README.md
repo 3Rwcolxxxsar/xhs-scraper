@@ -11,9 +11,6 @@
 - `scrape_and_sync.py`：关键词搜索、全局去重、帖子读取、分轮恢复和完整性判定的唯一生产入口。
 - `sync_xhs.py`：被入口导入，提供两层评论 checkpoint、payload 构造和业务 API 上传适配；其内置
   的示例帖子批处理仅为历史兼容，不要直接运行。
-- `fetch_comments.py`、`fetch_sub_comments.py`：本地遗留的手动恢复脚本，不是生产入口。前者只
-  翻顶层评论页，后者虽尝试两层翻页但没有 checkpoint、去重和完整性判定。不要在未确认没有外部
-  调用前直接删除；新任务一律使用 `scrape_and_sync.py`。
 
 ## 能做什么
 
@@ -134,10 +131,19 @@ uv run python scrape_and_sync.py --account logistics-a --cookie-source saved ...
 uv run python scrape_and_sync.py --account logistics-b --cookie-source saved ...
 ```
 
-当前实现只使用一个 WebBridge daemon，因此 Profile 的**导入**必须逐个进行，不能通过增加端口让
-多个 daemon 共同控制浏览器；导入后不同别名的 API 任务可各运行一个进程。不得在验证码、429、
-登录失效或 IP 拦截后自动换号续跑。多个 Profile 也可能共享公网 IP 和设备环境，账号隔离不等于
-风险隔离。
+若你已为不同 Chrome Profile 分别配置并启动独立 WebBridge daemon，可在**导入阶段**为每个命令
+指定 endpoint；例如：
+
+```bash
+XHS_WEBBRIDGE_URL=http://127.0.0.1:10086/command \
+  uv run python -m xhs_cli --account logistics-a --cookie-source webbridge login --json
+XHS_WEBBRIDGE_URL=http://127.0.0.1:10087/command \
+  uv run python -m xhs_cli --account logistics-b --cookie-source webbridge login --json
+```
+
+CLI 不负责启动或绑定第二个 daemon；`XHS_WEBBRIDGE_URL` 必须由你的 WebBridge 配置提供。导入后不再
+依赖 daemon，不同别名的 API 任务可各运行一个进程。不得在验证码、429、登录失效或 IP 拦截后自动
+换号续跑。多个 Profile 也可能共享公网 IP 和设备环境，账号隔离不等于风险隔离。
 
 ## 风控与断点
 

@@ -48,8 +48,9 @@ uv run python -m xhs_cli --account account-b --cookie-source saved status --json
 
 - WebBridge 只读取当前真实 Chrome 的会话或打开登录页。
 - 搜索、详情和评论分页不使用 DOM，也不由 WebBridge 发请求。
-- 当前实现固定连接一个 daemon；多个 Profile 必须逐个切换并导入，不能声称可同时操控多个 Profile
-  或通过多个端口并行。
+- 默认连接 `http://127.0.0.1:10086/command`。若用户已为不同 Profile 配置独立 daemon，可仅在
+  导入时通过 `XHS_WEBBRIDGE_URL=http://127.0.0.1:<port>/command` 选择对应 daemon；CLI 不启动或管理
+  第二个 daemon。每个 daemon 导入到不同 `--account` 后，后台抓取统一使用 `saved`。
 - 不关闭用户已有标签页或 session，除非用户明确要求。
 
 ## 多账号

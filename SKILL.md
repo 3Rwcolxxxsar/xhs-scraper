@@ -87,5 +87,5 @@ $XHS_CLI_DIR/scrape_and_sync.py
 
 ## 兼容边界
 
-`fetch_comments.py`、`fetch_sub_comments.py` 和 `sync_xhs.py` 只作为历史兼容或底层实现参考；
-关键词采集任务始终使用 `scrape_and_sync.py`。
+关键词采集任务始终使用 `scrape_and_sync.py`；`sync_xhs.py` 是其内部的评论 checkpoint 与 API 上传
+适配模块，不能作为独立生产入口。
