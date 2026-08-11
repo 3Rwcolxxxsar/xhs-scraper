@@ -2,22 +2,17 @@
 
 ## 用途
 
-把 `xhs-scraper` skill 与其依赖的 `xiaohongshu-cli` 项目迁移到另一台电脑。Skill 本身不包含 CLI 源码、浏览器会话或业务 API 凭据。
+在另一台电脑用 `xhs-scraper` 的 runtime overlay 为固定版本的上游 `xiaohongshu-cli` 补齐抓取能力。
+Skill 不包含完整 CLI fork、浏览器会话或业务 API 凭据。
 
 ## 应包含
 
 ```text
 xhs-scraper/
   SKILL.md
-  agents/openai.yaml
+  scripts/install_runtime_overlay.py
+  scripts/runtime-overlay/
   references/
-
-xiaohongshu-cli/
-  pyproject.toml
-  uv.lock
-  scrape_and_sync.py
-  xhs_cli/
-  tests/
 ```
 
 ## 必须排除
@@ -34,10 +29,20 @@ xiaohongshu-cli/
 ## 目标电脑配置
 
 1. 安装 Python 3.10+ 与 `uv`。
-2. 安装并连接 Kimi WebBridge；不得改用 Playwright、Camoufox、Selenium 或直接读取浏览器 Cookie 数据库。
-3. 设置 CLI 路径：`export XHS_CLI_DIR=/path/to/xiaohongshu-cli`。
-4. 上传任务设置：`export XHS_SYNC_API_URL=https://example.com/xhs/sync`。
-5. 每台设备和每个账号必须重新登录，不复制 Cookie。
+2. Clone 并锁定上游版本，再安装 overlay：
+
+   ```bash
+   git clone https://github.com/jackwener/xiaohongshu-cli.git ~/xiaohongshu-cli
+   cd ~/xiaohongshu-cli
+   git checkout 4d63f3c0c85ccd9054fa8e96d7f761aaf2507449
+   uv run python ~/.hermes/skills/xhs-scraper/scripts/install_runtime_overlay.py --target "$PWD"
+   uv sync
+   ```
+
+3. 安装并连接 Kimi WebBridge；不得改用 Playwright、Camoufox、Selenium 或直接读取浏览器 Cookie 数据库。
+4. 设置 CLI 路径：`export XHS_CLI_DIR=~/xiaohongshu-cli`。
+5. 上传任务设置：`export XHS_SYNC_API_URL=https://example.com/xhs/sync`。
+6. 每台设备和每个账号必须重新登录，不复制 Cookie。
 
 ## 验证
 

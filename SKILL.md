@@ -5,13 +5,13 @@ description: 按关键词和筛选条件抓取小红书自然排序前 N 个帖�
 
 # XHS Scraper
 
-使用兼容的 `xiaohongshu-cli` 生产入口完成任务：
+先把 Skill 内置的 runtime overlay 安装到固定版本的上游 `xiaohongshu-cli` clone，再使用生产入口：
 
 ```text
 $XHS_CLI_DIR/scrape_and_sync.py
 ```
 
-本 Skill 负责编排，不包含抓取器本身。`XHS_CLI_DIR` 必须指向包含
+运行 [install_runtime_overlay.py](scripts/install_runtime_overlay.py) 后，`XHS_CLI_DIR` 必须指向包含
 `scrape_and_sync.py`、`pyproject.toml` 和 `xhs_cli/` 的项目目录。上传任务还必须设置
 `XHS_SYNC_API_URL`；不得把内部 API 地址写入 Skill。
 
@@ -26,7 +26,8 @@ $XHS_CLI_DIR/scrape_and_sync.py
 
 ## 执行流程
 
-1. 解析 `XHS_CLI_DIR` 和上传目标；找不到项目目录时询问用户，不猜绝对路径。
+1. 若 `scrape_and_sync.py` 不存在，先按 [deployment-package.md](references/deployment-package.md)
+   clone 固定上游版本并安装 runtime overlay；不要要求用户手动复制本机私有改动。
 2. 优先检查已保存会话：
 
    ```bash

@@ -3,8 +3,8 @@
 一个面向 Agent 的小红书关键词采集 Skill。它编排兼容的 `xiaohongshu-cli`，按指定筛选条件
 取得每个关键词前 N 个帖子，抓取帖子信息、顶层评论和子评论，并在数据完整后同步到业务 API。
 
-> 本仓库只包含 Skill，不包含抓取器。实际执行依赖带有 `scrape_and_sync.py` 的
-> `xiaohongshu-cli` 项目。
+> 本仓库包含对上游 `xiaohongshu-cli` 的**版本锁定增量包**，不包含完整 CLI fork。安装器会将
+> 所需生产脚本和通用 CLI 增量复制到干净的上游 clone，并在覆盖前备份原文件。
 
 ## 运行时组件
 
@@ -49,15 +49,25 @@ git clone https://github.com/3Rwcolxxxsar/xhs-scraper.git \
   ~/.hermes/skills/xhs-scraper
 ```
 
-准备兼容的 `xiaohongshu-cli` 后设置：
+先获取固定版本的上游 CLI 并安装增量包：
+
+```bash
+git clone https://github.com/jackwener/xiaohongshu-cli.git ~/xiaohongshu-cli
+cd ~/xiaohongshu-cli
+git checkout 4d63f3c0c85ccd9054fa8e96d7f761aaf2507449
+uv run python ~/.hermes/skills/xhs-scraper/scripts/install_runtime_overlay.py --target "$PWD"
+uv sync
+```
+
+再设置：
 
 ```bash
 export XHS_CLI_DIR="/path/to/xiaohongshu-cli"
 export XHS_SYNC_API_URL="https://your-api.example/xhs/sync"
 ```
 
-`XHS_CLI_DIR` 中必须存在 `scrape_and_sync.py`、`pyproject.toml` 和 `xhs_cli/`。
-API 地址不保存在本仓库中。
+安装后，`XHS_CLI_DIR` 中会有 `scrape_and_sync.py`、`sync_xhs.py`、`pyproject.toml` 和 `xhs_cli/`。
+API 地址不保存在本仓库中；真实上传必须提供 `XHS_SYNC_API_URL` 或 `--api-url`，`--dry-run` 不需要。
 
 ## 告诉 Agent 怎么抓
 
