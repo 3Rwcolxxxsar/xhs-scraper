@@ -6,6 +6,15 @@
 > 本仓库只包含 Skill，不包含抓取器。实际执行依赖带有 `scrape_and_sync.py` 的
 > `xiaohongshu-cli` 项目。
 
+## 运行时组件
+
+- `scrape_and_sync.py`：关键词搜索、全局去重、帖子读取、分轮恢复和完整性判定的唯一生产入口。
+- `sync_xhs.py`：被入口导入，提供两层评论 checkpoint、payload 构造和业务 API 上传适配；其内置
+  的示例帖子批处理仅为历史兼容，不要直接运行。
+- `fetch_comments.py`、`fetch_sub_comments.py`：本地遗留的手动恢复脚本，不是生产入口。前者只
+  翻顶层评论页，后者虽尝试两层翻页但没有 checkpoint、去重和完整性判定。不要在未确认没有外部
+  调用前直接删除；新任务一律使用 `scrape_and_sync.py`。
+
 ## 能做什么
 
 - 多关键词搜索，并保持小红书 API 返回顺序
