@@ -12,7 +12,9 @@ uv run python -m xhs_cli --cookie-source saved status --json
 若返回已登录且 `guest=false`，直接以 `--cookie-source saved` 执行抓取。不要为了“模拟用户”
 重复调用 WebBridge；后续请求仍是签名 API，浏览器前置动作不会改变这一点。
 
-仅在 saved Cookie 缺失或过期时，从当前连接的 WebBridge Profile 导入并验证：
+若 `--cookie-source chrome` 报 `No 'a1' cookie found`，尤其是在 Windows 的新版 Chrome 上，
+不要把它当成“浏览器没有登录”。旧式 Cookie 读取器可能无法解密 Chrome 的 Cookie。改为连接目标
+Chrome Profile 的 Kimi WebBridge 扩展，并只在 saved 会话缺失或过期时导入一次：
 
 ```bash
 uv run python -m xhs_cli --cookie-source webbridge login --json
@@ -25,8 +27,20 @@ uv run python -m xhs_cli --cookie-source saved status --json
 uv run python -m xhs_cli --cookie-source webbridge login --qrcode --json
 ```
 
-上述命令使用默认账号目录。只有用户明确给出已配置别名时，才在命令中添加
-`--account worker-a` 等参数；不要从示例中虚构账号。
+多账号时，先在 Chrome 中切换到目标 Google/Chrome Profile，再导入到稳定的本地别名：
+
+```bash
+# Profile A 已连接 WebBridge 且已登录小红书
+uv run python -m xhs_cli --account account-a --cookie-source webbridge login --json
+uv run python -m xhs_cli --account account-a --cookie-source saved status --json
+
+# 切换到 Profile B 并连接后再执行；不要复用 account-a
+uv run python -m xhs_cli --account account-b --cookie-source webbridge login --json
+uv run python -m xhs_cli --account account-b --cookie-source saved status --json
+```
+
+导入成功后，所有抓取任务使用对应别名的 `--cookie-source saved`。`scrape_and_sync.py` 的别名参数
+同样是 `--account account-a`；不要依赖当前 WebBridge Profile 来决定后台任务使用哪个账号。
 
 验证码必须由用户在真实 Chrome 中人工处理。不得自动识别、绕过或更换账号继续探测。
 
@@ -34,7 +48,8 @@ uv run python -m xhs_cli --cookie-source webbridge login --qrcode --json
 
 - WebBridge 只读取当前真实 Chrome 的会话或打开登录页。
 - 搜索、详情和评论分页不使用 DOM，也不由 WebBridge 发请求。
-- 当前实现固定连接一个 daemon；不能声称可同时操控多个 Profile 或通过多个端口并行。
+- 当前实现固定连接一个 daemon；多个 Profile 必须逐个切换并导入，不能声称可同时操控多个 Profile
+  或通过多个端口并行。
 - 不关闭用户已有标签页或 session，除非用户明确要求。
 
 ## 多账号

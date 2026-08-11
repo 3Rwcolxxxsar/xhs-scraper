@@ -108,12 +108,36 @@ uv run python scrape_and_sync.py \
 
 ## 登录与账号
 
-先使用 `--cookie-source saved` 检查本地保存会话。只有会话缺失或失效时，才连接当前
-WebBridge Chrome Profile 导入 Cookie。当前 CLI 使用单个 WebBridge daemon；多 Profile
-需要逐个切换并导入到不同 `--account`，不能通过配置多个 WebSocket 端口实现并行浏览器控制。
+Windows 上新版 Chrome 可能不再允许旧式 Cookie 读取器解密浏览器 Cookie；遇到
+`No 'a1' cookie found` 时，不要反复尝试 `--cookie-source chrome`。安装并连接目标 Chrome
+Profile 的 Kimi WebBridge 扩展，完成一次导入：
 
-不同账号可各运行一个互不重叠的 API 任务，但不得在触发风控后自动换号继续。多个账号也可能
-共享公网 IP 和设备环境，账号隔离不等于风险隔离。
+```bash
+cd "$XHS_CLI_DIR"
+uv run python -m xhs_cli --account logistics-a --cookie-source webbridge login --json
+uv run python -m xhs_cli --account logistics-a --cookie-source saved status --json
+```
+
+`webbridge` 只用于导入当前 Profile 的 Cookie、会话失效后的重新登录，以及用户人工处理登录或
+验证码。验证成功后，抓取命令始终使用 `--cookie-source saved`；搜索、帖子和评论仍由 CLI 的签名
+API 请求完成，WebBridge 不参与分页，也不降低风控。
+
+要配置多个 Google/Chrome Profile，按以下顺序逐个导入（一个 Profile 对应一个稳定别名）：
+
+1. 在 Chrome 切换到 Profile A，确认该 Profile 已登录小红书且 WebBridge 已连接；执行上面的
+   `--account logistics-a --cookie-source webbridge login`。
+2. 切换到 Profile B，再以另一个别名执行同一导入，例如 `--account logistics-b`。
+3. 对每个别名检查 `--cookie-source saved status --json`；之后后台任务不再操作浏览器：
+
+```bash
+uv run python scrape_and_sync.py --account logistics-a --cookie-source saved ...
+uv run python scrape_and_sync.py --account logistics-b --cookie-source saved ...
+```
+
+当前实现只使用一个 WebBridge daemon，因此 Profile 的**导入**必须逐个进行，不能通过增加端口让
+多个 daemon 共同控制浏览器；导入后不同别名的 API 任务可各运行一个进程。不得在验证码、429、
+登录失效或 IP 拦截后自动换号续跑。多个 Profile 也可能共享公网 IP 和设备环境，账号隔离不等于
+风险隔离。
 
 ## 风控与断点
 
